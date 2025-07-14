@@ -10,7 +10,8 @@ import Dashboard from './pages/Dashboard';
 import Files from './pages/Files';
 import Keys from './pages/Keys';
 import AdminPendingUsers from './pages/AdminPendingUsers';
-
+import ProfilePage from './pages/ProfilePage';
+import SettingsPage from './pages/SettingsPage';
 const App = () => {
   return (
     <ThemeProvider theme={theme}>
@@ -33,6 +34,8 @@ const AppContent = () => {
         <Route path="/register" element={<Register />} />
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/files" element={<ProtectedRoute><Files /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
         <Route path="/keys" element={<ProtectedRoute><Keys /></ProtectedRoute>} />
         <Route path="/admin/pending-users" element={<ProtectedRoute adminOnly><AdminPendingUsers /></ProtectedRoute>} />
       </Routes>

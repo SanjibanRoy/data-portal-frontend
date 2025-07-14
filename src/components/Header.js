@@ -125,11 +125,11 @@ export default function Header() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             {authToken ? (
               <>
-                <IconButton color="inherit" onClick={() => navigate('/notifications')}>
+                {/* <IconButton color="inherit" onClick={() => navigate('/notifications')}>
                   <Badge badgeContent={3} color="error">
                     <Notifications />
                   </Badge>
-                </IconButton>
+                </IconButton> */}
                 {isAdmin && (
                   <Button
                     color="inherit"

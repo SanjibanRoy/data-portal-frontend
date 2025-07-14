@@ -31,7 +31,28 @@ import {
   Refresh as RefreshIcon
 } from '@mui/icons-material';
 import Sidebar from '../components/Sidebar';
-import { mockApiKeys } from '../services/mockData';
+import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
+
+// Axios instance with token cleanup
+const api = axios.create({
+  baseURL: process.env.REACT_APP_API_URL || 'http://192.168.0.236:9900/key',
+});
+
+api.interceptors.request.use(config => {
+  let token = localStorage.getItem('authToken');
+
+  if (token?.startsWith("b'") && token.endsWith("'")) {
+    token = token.slice(2, -1); // Remove b' prefix and ' suffix
+  }
+
+  if (token) {
+    console.log('Cleaned Auth Token:', token);
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  return config;
+});
 
 export default function Keys() {
   const [keys, setKeys] = useState([]);
@@ -51,32 +72,59 @@ export default function Keys() {
     fetchKeys();
   }, []);
 
-  const fetchKeys = () => {
-    setLoading(true);
-    // Simulate API fetch
-    setTimeout(() => {
-      setKeys(mockApiKeys);
-      setLoading(false);
-    }, 800);
-  };
+const fetchKeys = async () => {
+  setLoading(true);
+  try {
+    const response = await api.get('/key');
+    
+    // Parse the stringified JSON response
+    const parsedResponse = JSON.parse(response.data);
+    
+    // Access the nested `api_keys` array
+    setKeys(parsedResponse.data.api_keys);
+  } catch (error) {
+    console.error('Error fetching API keys:', error);
+    setSnackbar({
+      open: true,
+      message: error.response?.data?.error || 'Failed to fetch API keys',
+      severity: 'error'
+    });
+  } finally {
+    setLoading(false);
+  }
+};
 
   const filteredKeys = keys.filter(key =>
-    key.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    key.key.toLowerCase().includes(searchTerm.toLowerCase())
+    key.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const generateNewKey = () => {
-    // Simulate API call
-    setTimeout(() => {
-      const mockKey = `sk_live_${Math.random().toString(36).substring(2, 18)}_${Math.random().toString(36).substring(2, 10)}`;
-      setGeneratedKey(mockKey);
-      setSnackbar({
-        open: true,
-        message: 'New API key generated',
-        severity: 'success'
-      });
-    }, 1000);
-  };
+const generateNewKey = async () => {
+  try {
+    const response = await api.post('/keys', { name: newKeyName });
+    
+    // Parse the stringified JSON response
+    const parsedResponse = JSON.parse(response.data);
+    
+    // Extract the API key from the nested structure
+    const newApiKey = parsedResponse.data.api_key;
+    
+    setGeneratedKey(newApiKey); // Store the new key
+    fetchKeys(); // Refresh the list
+    
+    setSnackbar({
+      open: true,
+      message: 'New API key generated',
+      severity: 'success'
+    });
+  } catch (error) {
+    console.error('Error generating API key:', error);
+    setSnackbar({
+      open: true,
+      message: error.response?.data?.error || 'Failed to generate API key',
+      severity: 'error'
+    });
+  }
+};
 
   const handleGenerateClick = () => {
     if (newKeyName.trim()) {
@@ -93,17 +141,24 @@ export default function Keys() {
     });
   };
 
-  const handleDeleteKey = (id) => {
-    // Simulate API call
-    setTimeout(() => {
-      setKeys(keys.filter(key => key.id !== id));
+  const handleDeleteKey = async (id) => {
+    try {
+      await api.delete(`/keys/${id}`);
+      fetchKeys(); // Refresh the list
       setDeleteConfirm(null);
       setSnackbar({
         open: true,
         message: 'API key deleted',
         severity: 'success'
       });
-    }, 800);
+    } catch (error) {
+      console.error('Error deleting API key:', error);
+      setSnackbar({
+        open: true,
+        message: error.response?.data?.error || 'Failed to delete API key',
+        severity: 'error'
+      });
+    }
   };
 
   const formatDate = (dateString) => {
@@ -116,6 +171,12 @@ export default function Keys() {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const getKeyPreview = (keyId) => {
+    // Since we don't store the full key in the frontend,
+    // we can only show the key ID as a reference
+    return `key_${keyId}`;
   };
 
   return (
@@ -178,9 +239,10 @@ export default function Keys() {
                 <TableHead>
                   <TableRow sx={{ backgroundColor: '#f1f5f9' }}>
                     <TableCell sx={{ fontWeight: 600 }}>Name</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Key</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Key ID</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Created</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Expires</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Last Used</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
                   </TableRow>
@@ -188,41 +250,39 @@ export default function Keys() {
                 <TableBody>
                   {filteredKeys.length > 0 ? (
                     filteredKeys.map((key) => (
-                      <TableRow key={key.id} hover>
+                      <TableRow key={key.key_id} hover>
                         <TableCell sx={{ fontWeight: 500 }}>{key.name}</TableCell>
                         <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            {key.key.substring(0, 8)}...
-                            <IconButton 
-                              size="small" 
-                              onClick={() => copyToClipboard(key.key)}
-                              sx={{ ml: 1 }}
-                            >
-                              <CopyIcon fontSize="small" />
-                            </IconButton>
-                          </Box>
+                          {getKeyPreview(key.key_id)}
                         </TableCell>
                         <TableCell>
                           <Chip 
-                            label={key.active ? 'Active' : 'Inactive'} 
-                            color={key.active ? 'success' : 'default'}
+                            label="Active" 
+                            color="success"
                             size="small"
                             variant="outlined"
                           />
                         </TableCell>
-                        <TableCell>{formatDate(key.created)}</TableCell>
-                        <TableCell>{formatDate(key.lastUsed)}</TableCell>
+                        <TableCell>{formatDate(key.created_at)}</TableCell>
+                        <TableCell>{formatDate(key.expiry_date)}</TableCell>
+                        <TableCell>{formatDate(key.last_used)}</TableCell>
                         <TableCell>
+                          {generatedKey && generatedKey.includes(key.key_id) ? (
+                            <IconButton
+                              onClick={() => copyToClipboard(generatedKey)}
+                              sx={{ 
+                                '&:hover': { backgroundColor: 'primary.light', color: 'primary.main' }
+                              }}
+                            >
+                              <CopyIcon />
+                            </IconButton>
+                          ) : (
+                            <IconButton disabled>
+                              <VisibilityIcon />
+                            </IconButton>
+                          )}
                           <IconButton
-                            onClick={() => copyToClipboard(key.key)}
-                            sx={{ 
-                              '&:hover': { backgroundColor: 'primary.light', color: 'primary.main' }
-                            }}
-                          >
-                            <VisibilityIcon />
-                          </IconButton>
-                          <IconButton
-                            onClick={() => setDeleteConfirm(key.id)}
+                            onClick={() => setDeleteConfirm(key.key_id)}
                             sx={{ 
                               '&:hover': { backgroundColor: 'error.light', color: 'error.main' }
                             }}
@@ -234,7 +294,7 @@ export default function Keys() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={6} sx={{ textAlign: 'center', py: 4 }}>
+                      <TableCell colSpan={7} sx={{ textAlign: 'center', py: 4 }}>
                         <Typography color="text.secondary">
                           {searchTerm ? 'No matching keys found' : 'No API keys created yet'}
                         </Typography>
