@@ -54,7 +54,7 @@ const keyHex = '603deb1015ca71be2b73aef0857d7781f352c073b6108d72d9810a30914dff4f
 const ivHex = '000102030405060708090a0b0c0d0e0f'; // 16 bytes
 const MAX_PARALLEL_DOWNLOADS = 10;
 const MAX_SELECTION_LIMIT = 10;
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.0.236:9900';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://14.139.63.156:9900/apiis';
 
 const api = axios.create({ baseURL: API_BASE_URL });
 

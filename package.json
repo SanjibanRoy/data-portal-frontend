@@ -1,6 +1,7 @@
 {
   "name": "data-portal-frontend",
   "version": "0.1.0",
+  "homepage": "http://14.139.63.156:9900",
   "private": true,
   "dependencies": {
     "@emotion/react": "^11.14.0",

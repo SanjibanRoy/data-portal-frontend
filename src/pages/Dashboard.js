@@ -27,7 +27,7 @@ const StatCard = styled(Paper)(({ theme }) => ({
 
 
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://192.168.0.236:9900',
+  baseURL: process.env.REACT_APP_API_URL || 'http://14.139.63.156:9900/apiis',
 });
 
 api.interceptors.request.use(config => {

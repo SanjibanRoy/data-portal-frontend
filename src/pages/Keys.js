@@ -36,7 +36,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 // Axios instance with token cleanup
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://192.168.0.236:9900/key',
+  baseURL: process.env.REACT_APP_API_URL || 'http://14.139.63.156:9900/apiis/key',
 });
 
 api.interceptors.request.use(config => {

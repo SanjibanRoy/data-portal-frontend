@@ -25,7 +25,7 @@ import {
 import axios from 'axios';
 
 // Security configurations
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.0.236:9900';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://14.139.63.156:9900/apiis';
 const PASSWORD_MIN_LENGTH = 12;
 
 const GlassCard = styled(Paper)(({ theme }) => ({

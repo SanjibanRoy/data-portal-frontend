@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 const AuthContext = createContext();
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.0.236:9900';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://14.139.63.156:9900/apiis';
 const TOKEN_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 
 export const AuthProvider = ({ children }) => {

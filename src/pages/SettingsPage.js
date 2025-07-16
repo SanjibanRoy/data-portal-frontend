@@ -68,7 +68,7 @@ export default function SettingsPage() {
     const fetchUserData = async () => {
       try {
         const token = localStorage.getItem('authToken');
-        const response = await axios.get('http://192.168.0.236:9900/user/profile', {
+        const response = await axios.get('http://14.139.63.156:9900/apiis/user/profile', {
           headers: {
             Authorization: `Bearer ${token}`
           }
@@ -121,7 +121,7 @@ export default function SettingsPage() {
       setSuccess('');
       
       const token = localStorage.getItem('authToken');
-      await axios.put('http://192.168.0.236:9900/user/profile', userData, {
+      await axios.put('http://14.139.63.156:9900/apiis/user/profile', userData, {
         headers: {
           Authorization: `Bearer ${token}`
         }
