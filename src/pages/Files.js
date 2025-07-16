@@ -20,11 +20,6 @@ import {
   ListItemIcon,
   ListItemText,
   ListItemSecondaryAction,
-  Tabs,
-  Tab,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
   LinearProgress,
   Dialog,
   DialogTitle,
@@ -42,7 +37,6 @@ import LinkIcon from '@mui/icons-material/Link';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import SearchIcon from '@mui/icons-material/Search';
 import FileCopyIcon from '@mui/icons-material/FileCopy';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import ImageIcon from '@mui/icons-material/Image';
 import DescriptionIcon from '@mui/icons-material/Description';
@@ -52,16 +46,16 @@ import ArchiveIcon from '@mui/icons-material/Archive';
 import CodeIcon from '@mui/icons-material/Code';
 import CloseIcon from '@mui/icons-material/Close';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import axios from 'axios';
+import CryptoJS from 'crypto-js';
 
-// Configuration
+const keyHex = '603deb1015ca71be2b73aef0857d7781f352c073b6108d72d9810a30914dff4f'; // 32 bytes
+const ivHex = '000102030405060708090a0b0c0d0e0f'; // 16 bytes
 const MAX_PARALLEL_DOWNLOADS = 10;
 const MAX_SELECTION_LIMIT = 10;
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://192.168.0.236:9900';
 
-// Axios instance with token cleanup
 const api = axios.create({ baseURL: API_BASE_URL });
 
 api.interceptors.request.use(config => {
@@ -75,8 +69,20 @@ api.interceptors.request.use(config => {
   return config;
 });
 
+function encryptText(text) {
+  const key = CryptoJS.enc.Hex.parse(keyHex);
+  const iv = CryptoJS.enc.Hex.parse(ivHex);
+
+  const encrypted = CryptoJS.AES.encrypt(text, key, {
+    iv: iv,
+    mode: CryptoJS.mode.CBC,
+    padding: CryptoJS.pad.Pkcs7,
+  });
+
+  return encrypted.toString(); // Base64 string
+}
+
 export default function Files() {
-  // State management
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -88,11 +94,9 @@ export default function Files() {
     severity: 'success'
   });
   const [shareLink, setShareLink] = useState({
-    public: '',
     apiKey: '',
     open: false
   });
-  const [tabValue, setTabValue] = useState(0);
   const [downloadState, setDownloadState] = useState({
     active: false,
     completed: 0,
@@ -101,7 +105,7 @@ export default function Files() {
     speed: 0,
     timeRemaining: 0,
     showCancel: false,
-    downloads: {} // Track individual file downloads
+    downloads: {}
   });
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState({
@@ -112,8 +116,7 @@ export default function Files() {
   const cancelControllers = useRef(new Map());
   const downloadQueue = useRef([]);
   const activeDownloads = useRef(0);
-
-  // Utility functions
+  
   const formatBytes = (bytes, decimals = 2) => {
     if (bytes === 0 || isNaN(bytes)) return '0 Bytes';
     const k = 1024;
@@ -160,7 +163,6 @@ export default function Files() {
     }
   };
 
-  // Data fetching
   useEffect(() => {
     fetchFiles();
   }, []);
@@ -168,7 +170,7 @@ export default function Files() {
   const fetchFiles = async (path = '') => {
     setLoading(true);
     try {
-      const response = await api.get('/files/files' + (path ? `?path=${encodeURIComponent(path)}` : ''));
+      const response = await api.get('/files/files' + (path ? `?path=${encryptText(path)}` : ''));
       setFiles(response.data.files);
       setCurrentPath(response.data.path);
     } catch (error) {
@@ -182,13 +184,12 @@ export default function Files() {
     }
   };
 
-  // File selection and navigation
   const filteredFiles = files.filter(file =>
     file.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleFileSelect = (fileId, isFile) => {
-    if (!isFile) return; // Skip folders
+    if (!isFile) return;
     
     setSelectedFiles(prev => {
       if (prev.includes(fileId)) {
@@ -216,7 +217,6 @@ export default function Files() {
     fetchFiles(parentPath || '');
   };
 
-  // Context menu handlers
   const handleContextMenu = (event, file) => {
     event.preventDefault();
     setContextMenu({
@@ -234,7 +234,6 @@ export default function Files() {
     });
   };
 
-  // Download operations
   const downloadSingleFile = async (file) => {
     let localToken = localStorage.getItem("authToken");
     if (localToken?.startsWith("b'") && localToken.endsWith("'")) {
@@ -254,14 +253,13 @@ export default function Files() {
     cancelControllers.current.set(file.path, controller);
 
     try {
-      // Track download progress
       setDownloadState(prev => ({
         ...prev,
         active: true,
+        completed: 0,
         total: 1,
         showCancel: true,
         downloads: {
-          ...prev.downloads,
           [file.path]: {
             progress: 0,
             downloaded: 0,
@@ -272,12 +270,10 @@ export default function Files() {
         }
       }));
 
-      // Get download token
-      const res = await api.post("/files/generate-download-token", { path: file.path });
+      const res = await api.post("/files/generate-download-token", { path: encryptText(file.path) });
       const apiToken = res.data.token;
       if (!apiToken) throw new Error("No token received from server");
 
-      // Start download
       const response = await fetch(
         `${API_BASE_URL}/files/download/${apiToken}`,
         {
@@ -302,7 +298,6 @@ export default function Files() {
         chunks.push(value);
         receivedLength += value.length;
 
-        // Update progress
         const currentTime = Date.now();
         const timeDiff = (currentTime - lastUpdateTime) / 1000;
         const bytesDiff = receivedLength - lastBytes;
@@ -328,7 +323,6 @@ export default function Files() {
         }
       }
 
-      // Complete download
       const blob = new Blob(chunks);
       saveAs(blob, file.name);
 
@@ -336,6 +330,7 @@ export default function Files() {
         ...prev,
         completed: 1,
         active: false,
+        showCancel: false,
         downloads: {
           ...prev.downloads,
           [file.path]: {
@@ -357,6 +352,8 @@ export default function Files() {
       }
       setDownloadState(prev => ({
         ...prev,
+        active: false,
+        showCancel: false,
         downloads: {
           ...prev.downloads,
           [file.path]: {
@@ -368,8 +365,6 @@ export default function Files() {
       }));
     } finally {
       cancelControllers.current.delete(file.path);
-      activeDownloads.current -= 1;
-      processDownloadQueue();
     }
   };
 
@@ -380,7 +375,6 @@ export default function Files() {
       downloadSingleFile(file);
     }
 
-    // Check if all downloads are complete
     if (activeDownloads.current === 0 && downloadQueue.current.length === 0) {
       setDownloadState(prev => ({
         ...prev,
@@ -402,7 +396,16 @@ export default function Files() {
       speed: 0,
       timeRemaining: 0,
       showCancel: true,
-      downloads: {}
+      downloads: filesToDownload.reduce((acc, file) => {
+        acc[file.path] = {
+          progress: 0,
+          downloaded: 0,
+          total: file.size || 0,
+          speed: 0,
+          active: false
+        };
+        return acc;
+      }, {})
     });
 
     downloadQueue.current = [...filesToDownload];
@@ -442,26 +445,19 @@ export default function Files() {
     downloadQueue.current = [];
     activeDownloads.current = 0;
     setConfirmCancelOpen(false);
-    setDownloadState(prev => ({ ...prev, active: false }));
+    setDownloadState(prev => ({ ...prev, active: false, showCancel: false }));
   };
 
-  // Share operations
-  const generateShareLink = async (path, isPublic = true) => {
+  const generateShareLink = async (path) => {
     try {
-      const response = await api.post('/files/share', { path });
-      const data = response.data;
-      
       setShareLink({
-        public: `${window.location.origin}/download?token=${data.token}`,
-        apiKey: `${window.location.origin}/api/download?token=${data.token}&api_key=YOUR_API_KEY`,
+        apiKey: `http://192.168.0.236/api/apikeydownload?token=${encryptText(path)}&api_key=YOUR_API_KEY`,
         open: true
       });
       
-      setTabValue(isPublic ? 0 : 1);
-      
       setSnackbar({
         open: true,
-        message: 'Share link generated',
+        message: 'API share link generated',
         severity: 'success'
       });
     } catch (error) {
@@ -511,14 +507,11 @@ export default function Files() {
     });
   };
 
-  // Calculate overall progress
   useEffect(() => {
     if (downloadState.active) {
       const totalFiles = downloadState.total;
       const completedFiles = downloadState.completed;
-      const activeDownloads = Object.values(downloadState.downloads).filter(d => d.active).length;
       
-      // Calculate overall progress
       let totalProgress = 0;
       let totalDownloaded = 0;
       let totalSize = 0;
@@ -531,7 +524,10 @@ export default function Files() {
         totalSpeed += download.speed || 0;
       });
 
-      const avgProgress = totalFiles > 0 ? Math.round(totalProgress / totalFiles) : 0;
+      const avgProgress = totalFiles > 0 
+        ? Math.round((completedFiles * 100 + totalProgress) / totalFiles)
+        : 0;
+
       const timeRemaining = totalSpeed > 0 
         ? (totalSize - totalDownloaded) / totalSpeed 
         : 0;
@@ -563,6 +559,7 @@ export default function Files() {
               <Box sx={{ flexGrow: 1 }}>
                 <Typography variant="subtitle1">
                   Downloading {downloadState.total} file{downloadState.total !== 1 ? 's' : ''}
+                  {downloadState.completed > 0 && ` (${downloadState.completed} completed)`}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   {downloadState.progress}% complete
@@ -594,48 +591,44 @@ export default function Files() {
           </Paper>
         )}
 
-        {/* Individual download progress (collapsible) */}
+        {/* Individual download progress */}
         {downloadState.active && Object.keys(downloadState.downloads).length > 0 && (
-          <Accordion sx={{ mb: 3 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography>Download Details</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <List dense>
-                {Object.entries(downloadState.downloads).map(([path, download]) => {
-                  const file = files.find(f => f.path === path);
-                  return (
-                    <ListItem key={path}>
-                      <ListItemIcon>
-                        {file && getFileIcon(file.name)}
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={file?.name || path.split('/').pop()}
-                        secondary={
-                          <Box sx={{ width: '100%' }}>
-                            <LinearProgress
-                              variant="determinate"
-                              value={download.progress}
-                              sx={{ height: 4, my: 1 }}
-                              color={download.error ? 'error' : 'primary'}
-                            />
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <Typography variant="caption">
-                                {download.progress}%
-                              </Typography>
-                              <Typography variant="caption">
-                                {formatBytes(download.downloaded)} of {formatBytes(download.total)}
-                              </Typography>
-                            </Box>
+          <Paper elevation={3} sx={{ mb: 3, p: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>Download Details</Typography>
+            <List dense>
+              {Object.entries(downloadState.downloads).map(([path, download]) => {
+                const file = files.find(f => f.path === path);
+                return (
+                  <ListItem key={path}>
+                    <ListItemIcon>
+                      {file && getFileIcon(file.name)}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={file?.name || path.split('/').pop()}
+                      secondary={
+                        <Box sx={{ width: '100%' }}>
+                          <LinearProgress
+                            variant="determinate"
+                            value={download.progress}
+                            sx={{ height: 4, my: 1 }}
+                            color={download.error ? 'error' : 'primary'}
+                          />
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Typography variant="caption">
+                              {download.progress}%
+                            </Typography>
+                            <Typography variant="caption">
+                              {formatBytes(download.downloaded)} of {formatBytes(download.total)}
+                            </Typography>
                           </Box>
-                        }
-                      />
-                    </ListItem>
-                  );
-                })}
-              </List>
-            </AccordionDetails>
-          </Accordion>
+                        </Box>
+                      }
+                    />
+                  </ListItem>
+                );
+              })}
+            </List>
+          </Paper>
         )}
 
         {/* Main content */}
@@ -813,121 +806,74 @@ export default function Files() {
           )}
         </Paper>
 
-        {/* Share links panel */}
+        {/* API Share Link Panel */}
         {shareLink.open && (
-          <Paper elevation={0} sx={{ mt: 3, p: 3, borderRadius: 3, backgroundColor: 'white' }}>
+          <Paper elevation={0} sx={{  mt: 3,
+                                      p: 3,
+                                      borderRadius: 3,
+                                      backgroundColor: 'white',
+                                      maxWidth: 1200, // adjust as needed
+                                      width: '100%',
+                                      mx: 'auto' }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-              Shareable Links
+              API Share Link
             </Typography>
             
-            <Tabs 
-              value={tabValue} 
-              onChange={(e, newValue) => setTabValue(newValue)}
-              sx={{ mb: 2 }}
-            >
-              <Tab label="Public Link" />
-              <Tab label="API Link" />
-            </Tabs>
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 2,
+              backgroundColor: 'grey.100',
+              p: 2,
+              borderRadius: 1
+            }}>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  flexGrow: 1, 
+                  wordBreak: 'break-all',
+                  fontFamily: 'monospace'
+                }}
+              >
+                {shareLink.apiKey}
+              </Typography>
+              <Button 
+                startIcon={<FileCopyIcon />}
+                onClick={() => copyToClipboard(shareLink.apiKey)}
+                variant="outlined"
+                size="small"
+              >
+                Copy
+              </Button>
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+              This link requires an API key for access
+            </Typography>
             
-            {tabValue === 0 && (
-              <Box>
-                <Box sx={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 2,
-                  backgroundColor: 'grey.100',
-                  p: 2,
-                  borderRadius: 1
-                }}>
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      flexGrow: 1, 
-                      wordBreak: 'break-all',
-                      fontFamily: 'monospace'
-                    }}
-                  >
-                    {shareLink.public}
-                  </Typography>
-                  <Button 
-                    startIcon={<FileCopyIcon />}
-                    onClick={() => copyToClipboard(shareLink.public)}
-                    variant="outlined"
-                    size="small"
-                  >
-                    Copy
-                  </Button>
-                </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                  This link will expire in 7 days and can be accessed by anyone
-                </Typography>
-              </Box>
-            )}
-            
-            {tabValue === 1 && (
-              <Box>
-                <Box sx={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 2,
-                  backgroundColor: 'grey.100',
-                  p: 2,
-                  borderRadius: 1
-                }}>
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      flexGrow: 1, 
-                      wordBreak: 'break-all',
-                      fontFamily: 'monospace'
-                    }}
-                  >
-                    {shareLink.apiKey}
-                  </Typography>
-                  <Button 
-                    startIcon={<FileCopyIcon />}
-                    onClick={() => copyToClipboard(shareLink.apiKey)}
-                    variant="outlined"
-                    size="small"
-                  >
-                    Copy
-                  </Button>
-                </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                  This link requires an API key for access and will expire in 7 days
-                </Typography>
-                
-                <Accordion elevation={0} sx={{ mt: 2, border: '1px solid', borderColor: 'divider' }}>
-                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Typography variant="subtitle2">API Usage Guide</Typography>
-                  </AccordionSummary>
-                  <AccordionDetails>
-                    <Typography variant="body2" gutterBottom>
-                      To use the API link, include the API key in your requests:
-                    </Typography>
-                    <Box component="pre" sx={{ 
-                      backgroundColor: 'grey.100', 
-                      p: 2, 
-                      borderRadius: 1,
-                      overflowX: 'auto',
-                      fontFamily: 'monospace'
-                    }}>
-                      <code>
-                        {`// With curl\n`}
-                        {`curl -X GET "${shareLink.apiKey}"\n\n`}
-                        {`// With JavaScript fetch\n`}
-                        {`fetch("${shareLink.apiKey.split('?')[0]}", {\n`}
-                        {`  headers: {\n`}
-                        {`    "Authorization": "Bearer YOUR_API_KEY",\n`}
-                        {`    "X-File-Token": "${shareLink.apiKey.split('token=')[1].split('&')[0]}"\n`}
-                        {`  }\n`}
-                        {`})`}
-                      </code>
-                    </Box>
-                  </AccordionDetails>
-                </Accordion>
-              </Box>
-            )}
+            <Box component="pre" sx={{ 
+              backgroundColor: '#1e1e1e',
+              p: 3,
+              borderRadius: 2,
+              overflowX: 'auto',
+              fontFamily: '"Fira Code", monospace',
+              color: '#d4d4d4',
+              boxShadow: 3,
+              mt: 3
+            }}>
+              <code>
+                <Box component="span" sx={{ color: '#569cd6' }}>{`// Download with curl`}</Box>{`\n`}
+                <Box component="span" sx={{ color: '#ce9178' }}>{`curl -X GET "`}</Box>
+                <Box component="span" sx={{ color: '#9cdcfe' }}>{shareLink.apiKey}</Box>
+                <Box component="span" sx={{ color: '#ce9178' }}>{`"`}</Box>
+                <Box component="span" sx={{ color: '#d7ba7d' }}>{` --output filename.ext`}</Box>{`\n\n`}
+
+                <Box component="span" sx={{ color: '#569cd6' }}>{`// Download with wget`}</Box>{`\n`}
+                <Box component="span" sx={{ color: '#ce9178' }}>{`wget "`}</Box>
+                <Box component="span" sx={{ color: '#9cdcfe' }}>{shareLink.apiKey}</Box>
+                <Box component="span" sx={{ color: '#ce9178' }}>{`"`}</Box>
+                <Box component="span" sx={{ color: '#d7ba7d' }}>{` -O filename.ext`}</Box>
+              </code>
+            </Box>
           </Paper>
         )}
 
@@ -941,33 +887,7 @@ export default function Files() {
           <MenuItem 
             onClick={() => {
               if (contextMenu.file) {
-                downloadSingleFile(contextMenu.file);
-              }
-            }}
-            disabled={downloadState.active}
-          >
-            <ListItemIcon>
-              <DownloadIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Download</ListItemText>
-          </MenuItem>
-          <MenuItem 
-            onClick={() => {
-              if (contextMenu.file) {
-                generateShareLink(contextMenu.file.path, true);
-              }
-            }}
-            disabled={downloadState.active}
-          >
-            <ListItemIcon>
-              <LinkIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Get Public Share Link</ListItemText>
-          </MenuItem>
-          <MenuItem 
-            onClick={() => {
-              if (contextMenu.file) {
-                generateShareLink(contextMenu.file.path, false);
+                generateShareLink(contextMenu.file.path);
               }
             }}
             disabled={downloadState.active}
