@@ -57,6 +57,7 @@ export default function Dashboard() {
     storage: false
   });
   const [error, setError] = useState(null);
+  const [uploadAlert, setUploadAlert] = useState(false);
 
   const fetchFilesData = async () => {
     try {
@@ -129,6 +130,11 @@ export default function Dashboard() {
     return limit > 0 ? Math.round((used / limit) * 100) : 0;
   };
 
+  const handleUploadClick = () => {
+    setUploadAlert(true);
+    setTimeout(() => setUploadAlert(false), 5000);
+  };
+
   return (
     <Box display="flex" minHeight="100vh" sx={{ backgroundColor: '#F8FAFC' }}>
       <Sidebar />
@@ -173,6 +179,13 @@ export default function Dashboard() {
         {error && (
           <Alert severity="error" sx={{ mb: 3 }}>
             {error}
+          </Alert>
+        )}
+
+        {/* Upload Alert */}
+        {uploadAlert && (
+          <Alert severity="info" sx={{ mb: 3 }} onClose={() => setUploadAlert(false)}>
+            File upload is not available for your account. Please request access from the admin.
           </Alert>
         )}
 
@@ -305,6 +318,7 @@ export default function Dashboard() {
                   variant="outlined"
                   startIcon={<UploadIcon />}
                   fullWidth
+                  onClick={handleUploadClick}
                   sx={{
                     py: 1.5,
                     borderRadius: '8px',

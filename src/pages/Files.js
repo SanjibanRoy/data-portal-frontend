@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
-import { 
-  Box, 
-  Typography, 
-  TextField, 
-  CircularProgress,
+// Files.jsx
+import { useState, useEffect } from 'react';
+import {
+  Box,
+  Typography,
+  TextField,
   Button,
   Checkbox,
   IconButton,
@@ -14,18 +14,18 @@ import {
   Link,
   Paper,
   Divider,
-  Avatar,
+  Grid,
+  Card,
+  CardActionArea,
+  CardContent,
+  CardActions,
+  Chip,
+  Fab,
   List,
   ListItem,
   ListItemIcon,
   ListItemText,
   ListItemSecondaryAction,
-  LinearProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Badge,
   Menu,
   MenuItem
 } from '@mui/material';
@@ -34,7 +34,6 @@ import FolderIcon from '@mui/icons-material/Folder';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import LinkIcon from '@mui/icons-material/Link';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import SearchIcon from '@mui/icons-material/Search';
 import FileCopyIcon from '@mui/icons-material/FileCopy';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
@@ -44,15 +43,13 @@ import AudioFileIcon from '@mui/icons-material/AudioFile';
 import VideoFileIcon from '@mui/icons-material/VideoFile';
 import ArchiveIcon from '@mui/icons-material/Archive';
 import CodeIcon from '@mui/icons-material/Code';
-import CloseIcon from '@mui/icons-material/Close';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import { saveAs } from 'file-saver';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import axios from 'axios';
 import CryptoJS from 'crypto-js';
 
-const keyHex = '603deb1015ca71be2b73aef0857d7781f352c073b6108d72d9810a30914dff4f'; // 32 bytes
-const ivHex = '000102030405060708090a0b0c0d0e0f'; // 16 bytes
-const MAX_PARALLEL_DOWNLOADS = 10;
+const keyHex = '603deb1015ca71be2b73aef0857d7781f352c073b6108d72d9810a30914dff4f';
+const ivHex = '000102030405060708090a0b0c0d0e0f';
 const MAX_SELECTION_LIMIT = 10;
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://14.139.63.156:9900/apiis';
 
@@ -79,44 +76,42 @@ function encryptText(text) {
     padding: CryptoJS.pad.Pkcs7,
   });
 
-  return encrypted.toString(); // Base64 string
+  return encrypted.toString();
 }
 
 export default function Files() {
   const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [currentPath, setCurrentPath] = useState('');
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: '',
-    severity: 'success'
-  });
-  const [shareLink, setShareLink] = useState({
-    apiKey: '',
-    open: false
-  });
-  const [downloadState, setDownloadState] = useState({
-    active: false,
-    completed: 0,
-    total: 0,
-    progress: 0,
-    speed: 0,
-    timeRemaining: 0,
-    showCancel: false,
-    downloads: {}
-  });
-  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
-  const [contextMenu, setContextMenu] = useState({
-    open: false,
-    file: null,
-    anchorEl: null
-  });
-  const cancelControllers = useRef(new Map());
-  const downloadQueue = useRef([]);
-  const activeDownloads = useRef(0);
-  
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [shareLink, setShareLink] = useState({ apiKey: '', open: false });
+  const [contextMenu, setContextMenu] = useState({ open: false, file: null, anchorEl: null });
+  const [viewMode, setViewMode] = useState('grid');
+
+  useEffect(() => {
+    fetchFiles();
+  }, []);
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    setSnackbar({
+      open: true,
+      message: 'Link copied to clipboard',
+      severity: 'success'
+    });
+  };
+
+  const fetchFiles = async (path = '') => {
+    try {
+      const response = await api.get('/files/files' + (path ? `?path=${encryptText(path)}` : ''));
+      setFiles(response.data.files);
+      setCurrentPath(response.data.path);
+    } catch (error) {
+      setSnackbar({ open: true, message: 'Failed to fetch files', severity: 'error' });
+    }
+  };
+
   const formatBytes = (bytes, decimals = 2) => {
     if (bytes === 0 || isNaN(bytes)) return '0 Bytes';
     const k = 1024;
@@ -126,81 +121,34 @@ export default function Files() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   };
 
-  const formatTime = (seconds) => {
-    if (seconds < 60) return `${Math.floor(seconds)}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
-    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-  };
-
   const formatDate = (dateString) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
 
-  const getFileIcon = (fileName) => {
+  const getFileIcon = (fileName, isFolder = false) => {
+    if (isFolder) return <FolderIcon color="primary" />;
+    
     const extension = fileName.split('.').pop().toLowerCase();
     switch(extension) {
       case 'pdf': return <PictureAsPdfIcon color="error" />;
-      case 'jpg': case 'jpeg': case 'png': case 'gif': case 'svg': case 'webp':
-        return <ImageIcon color="primary" />;
-      case 'txt': case 'doc': case 'docx': case 'odt':
-        return <DescriptionIcon color="info" />;
-      case 'mp3': case 'wav': case 'ogg':
-        return <AudioFileIcon color="action" />;
-      case 'mp4': case 'mov': case 'avi':
-        return <VideoFileIcon color="secondary" />;
-      case 'zip': case 'rar': case '7z':
-        return <ArchiveIcon color="warning" />;
-      case 'js': case 'jsx': case 'ts': case 'html': case 'css': case 'json':
-        return <CodeIcon color="success" />;
+      case 'jpg': case 'jpeg': case 'png': case 'gif': return <ImageIcon color="primary" />;
+      case 'txt': case 'doc': case 'docx': return <DescriptionIcon color="info" />;
+      case 'mp3': case 'wav': return <AudioFileIcon color="action" />;
+      case 'mp4': case 'avi': return <VideoFileIcon color="secondary" />;
+      case 'zip': case 'rar': return <ArchiveIcon color="warning" />;
+      case 'js': case 'ts': case 'html': case 'css': return <CodeIcon color="success" />;
       default: return <InsertDriveFileIcon color="inherit" />;
     }
   };
 
-  useEffect(() => {
-    fetchFiles();
-  }, []);
-
-  const fetchFiles = async (path = '') => {
-    setLoading(true);
-    try {
-      const response = await api.get('/files/files' + (path ? `?path=${encryptText(path)}` : ''));
-      setFiles(response.data.files);
-      setCurrentPath(response.data.path);
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: 'Failed to fetch files: ' + (error.response?.data?.message || error.message),
-        severity: 'error'
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filteredFiles = files.filter(file =>
-    file.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const handleFileSelect = (fileId, isFile) => {
-    if (!isFile) return;
-    
+  const handleFileSelect = (fileId) => {
     setSelectedFiles(prev => {
       if (prev.includes(fileId)) {
         return prev.filter(id => id !== fileId);
       } else {
         if (prev.length >= MAX_SELECTION_LIMIT) {
-          setSnackbar({
-            open: true,
-            message: `Maximum ${MAX_SELECTION_LIMIT} files can be selected`,
-            severity: 'warning'
-          });
+          setSnackbar({ open: true, message: `Maximum ${MAX_SELECTION_LIMIT} files can be selected`, severity: 'warning' });
           return prev;
         }
         return [...prev, fileId];
@@ -217,606 +165,400 @@ export default function Files() {
     fetchFiles(parentPath || '');
   };
 
-  const handleContextMenu = (event, file) => {
-    event.preventDefault();
-    setContextMenu({
-      open: true,
-      file,
-      anchorEl: event.currentTarget
-    });
-  };
-
-  const handleCloseContextMenu = () => {
-    setContextMenu({
-      open: false,
-      file: null,
-      anchorEl: null
-    });
-  };
-
-  const downloadSingleFile = async (file) => {
-    let localToken = localStorage.getItem("authToken");
-    if (localToken?.startsWith("b'") && localToken.endsWith("'")) {
-      localToken = localToken.slice(2, -1);
+  const downloadItem = async (item) => {
+    let token = localStorage.getItem("authToken");
+    if (token?.startsWith("b'") && token.endsWith("'")) {
+      token = token.slice(2, -1);
     }
 
-    if (!localToken) {
-      setSnackbar({
-        open: true,
-        message: "Authentication failed, token missing",
-        severity: "error",
-      });
+    if (!token) {
+      setSnackbar({ open: true, message: 'Token missing', severity: 'error' });
       return;
     }
 
-    const controller = new AbortController();
-    cancelControllers.current.set(file.path, controller);
-
     try {
-      setDownloadState(prev => ({
-        ...prev,
-        active: true,
-        completed: 0,
-        total: 1,
-        showCancel: true,
-        downloads: {
-          [file.path]: {
-            progress: 0,
-            downloaded: 0,
-            total: file.size || 0,
-            speed: 0,
-            active: true
-          }
-        }
-      }));
-
-      const res = await api.post("/files/generate-download-token", { path: encryptText(file.path) });
+      const res = await api.post("/files/generate-download-token", { 
+        path: encryptText(item.path),
+        is_folder: !item.is_file
+      });
       const apiToken = res.data.token;
-      if (!apiToken) throw new Error("No token received from server");
+      const downloadUrl = `${API_BASE_URL}/files/download/${apiToken}`;
 
-      const response = await fetch(
-        `${API_BASE_URL}/files/download/${apiToken}`,
-        {
-          headers: { Authorization: `Bearer ${localToken}` },
-          signal: controller.signal
-        }
-      );
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-      const contentLength = parseInt(response.headers.get('content-length'), 10) || file.size || 0;
-      const reader = response.body.getReader();
-      let receivedLength = 0;
-      const chunks = [];
-      let lastUpdateTime = Date.now();
-      let lastBytes = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        chunks.push(value);
-        receivedLength += value.length;
-
-        const currentTime = Date.now();
-        const timeDiff = (currentTime - lastUpdateTime) / 1000;
-        const bytesDiff = receivedLength - lastBytes;
-
-        if (timeDiff > 0.5) {
-          const speed = bytesDiff / timeDiff;
-          setDownloadState(prev => ({
-            ...prev,
-            downloads: {
-              ...prev.downloads,
-              [file.path]: {
-                ...prev.downloads[file.path],
-                progress: Math.round((receivedLength / contentLength) * 100),
-                downloaded: receivedLength,
-                speed: speed,
-                active: true
-              }
-            }
-          }));
-
-          lastUpdateTime = currentTime;
-          lastBytes = receivedLength;
-        }
+      if (item.is_file) {
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download = item.name;
+        a.target = "_blank";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        window.open(downloadUrl, '_blank');
       }
-
-      const blob = new Blob(chunks);
-      saveAs(blob, file.name);
-
-      setDownloadState(prev => ({
-        ...prev,
-        completed: 1,
-        active: false,
-        showCancel: false,
-        downloads: {
-          ...prev.downloads,
-          [file.path]: {
-            ...prev.downloads[file.path],
-            active: false,
-            progress: 100
-          }
-        }
-      }));
-
     } catch (err) {
-      if (err.name !== 'AbortError') {
-        console.error(`Download failed for ${file.name}:`, err);
-        setSnackbar({
-          open: true,
-          message: `Failed to download ${file.name}: ${err.message}`,
-          severity: "error",
-        });
-      }
-      setDownloadState(prev => ({
-        ...prev,
-        active: false,
-        showCancel: false,
-        downloads: {
-          ...prev.downloads,
-          [file.path]: {
-            ...prev.downloads[file.path],
-            active: false,
-            error: true
-          }
-        }
-      }));
-    } finally {
-      cancelControllers.current.delete(file.path);
+      setSnackbar({ open: true, message: `Download failed: ${err.message}`, severity: 'error' });
     }
   };
 
-  const processDownloadQueue = () => {
-    while (activeDownloads.current < MAX_PARALLEL_DOWNLOADS && downloadQueue.current.length > 0) {
-      const file = downloadQueue.current.shift();
-      activeDownloads.current += 1;
-      downloadSingleFile(file);
+  const downloadSelectedItems = async () => {
+    const itemsToDownload = files.filter(f => selectedFiles.includes(f.path) && f.is_file);
+    for (const item of itemsToDownload) {
+      await downloadItem(item);
     }
-
-    if (activeDownloads.current === 0 && downloadQueue.current.length === 0) {
-      setDownloadState(prev => ({
-        ...prev,
-        active: false,
-        showCancel: false
-      }));
-      setSelectedFiles([]);
-    }
+    setSelectedFiles([]);
   };
 
-  const startParallelDownloads = async (filesToDownload) => {
-    if (filesToDownload.length === 0) return;
-
-    setDownloadState({
-      active: true,
-      completed: 0,
-      total: filesToDownload.length,
-      progress: 0,
-      speed: 0,
-      timeRemaining: 0,
-      showCancel: true,
-      downloads: filesToDownload.reduce((acc, file) => {
-        acc[file.path] = {
-          progress: 0,
-          downloaded: 0,
-          total: file.size || 0,
-          speed: 0,
-          active: false
-        };
-        return acc;
-      }, {})
+  const generateShareLink = async (path, isFolder = false) => {
+    const token = encryptText(path);
+    setShareLink({
+      apiKey: `${API_BASE_URL}/apikeydownload?token=${token}&api_key=YOUR_API_KEY&is_folder=${isFolder}`,
+      open: true
     });
-
-    downloadQueue.current = [...filesToDownload];
-    activeDownloads.current = 0;
-    processDownloadQueue();
-  };
-
-  const downloadSelectedFiles = async () => {
-    if (selectedFiles.length === 0) return;
-
-    const filesToDownload = files.filter(f => 
-      selectedFiles.includes(f.path) && f.is_file
-    );
-
-    if (filesToDownload.length === 0) {
-      setSnackbar({
-        open: true,
-        message: 'No valid files selected for download',
-        severity: 'warning'
-      });
-      return;
-    }
-
-    if (filesToDownload.length === 1) {
-      await downloadSingleFile(filesToDownload[0]);
-      return;
-    }
-
-    startParallelDownloads(filesToDownload);
-  };
-
-  const cancelAllDownloads = () => {
-    cancelControllers.current.forEach(controller => {
-      controller.abort();
+    setSnackbar({ 
+      open: true, 
+      message: isFolder ? 'Folder share link generated' : 'File share link generated', 
+      severity: 'success' 
     });
-    cancelControllers.current.clear();
-    downloadQueue.current = [];
-    activeDownloads.current = 0;
-    setConfirmCancelOpen(false);
-    setDownloadState(prev => ({ ...prev, active: false, showCancel: false }));
-  };
-
-  const generateShareLink = async (path) => {
-    try {
-      setShareLink({
-        apiKey: `http://192.168.0.236/api/apikeydownload?token=${encryptText(path)}&api_key=YOUR_API_KEY`,
-        open: true
-      });
-      
-      setSnackbar({
-        open: true,
-        message: 'API share link generated',
-        severity: 'success'
-      });
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: 'Failed to generate share link: ' + (error.response?.data?.message || error.message),
-        severity: 'error'
-      });
-    }
   };
 
   const renderBreadcrumbs = () => {
     const parts = currentPath.split('/').filter(Boolean);
-    
     return (
-      <Breadcrumbs aria-label="breadcrumb" sx={{ mb: 2 }}>
-        <Link 
-          color="inherit" 
-          onClick={() => fetchFiles()}
-          sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+        <Fab 
+          color="primary" 
+          size="small" 
+          onClick={navigateUp}
+          sx={{ 
+            mr: 2,
+            boxShadow: 'none',
+            '&:hover': {
+              backgroundColor: 'primary.dark',
+              boxShadow: 'none'
+            }
+          }}
         >
-          Home
-        </Link>
-        {parts.map((part, index) => {
-          const path = parts.slice(0, index + 1).join('/');
-          return (
-            <Link
-              key={path}
-              color="inherit"
-              onClick={() => fetchFiles(path)}
-              sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
-            >
-              {part}
-            </Link>
-          );
-        })}
-      </Breadcrumbs>
+          <ArrowUpwardIcon />
+        </Fab>
+        <Breadcrumbs aria-label="breadcrumb">
+          <Link color="inherit" onClick={() => fetchFiles()} sx={{ cursor: 'pointer' }}>Home</Link>
+          {parts.map((part, index) => {
+            const path = parts.slice(0, index + 1).join('/');
+            return (
+              <Link key={path} color="inherit" onClick={() => fetchFiles(path)} sx={{ cursor: 'pointer' }}>
+                {part}
+              </Link>
+            );
+          })}
+        </Breadcrumbs>
+      </Box>
     );
   };
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    setSnackbar({
-      open: true,
-      message: 'Link copied to clipboard',
-      severity: 'success'
-    });
-  };
-
-  useEffect(() => {
-    if (downloadState.active) {
-      const totalFiles = downloadState.total;
-      const completedFiles = downloadState.completed;
-      
-      let totalProgress = 0;
-      let totalDownloaded = 0;
-      let totalSize = 0;
-      let totalSpeed = 0;
-      
-      Object.values(downloadState.downloads).forEach(download => {
-        totalProgress += download.progress;
-        totalDownloaded += download.downloaded;
-        totalSize += download.total || 0;
-        totalSpeed += download.speed || 0;
-      });
-
-      const avgProgress = totalFiles > 0 
-        ? Math.round((completedFiles * 100 + totalProgress) / totalFiles)
-        : 0;
-
-      const timeRemaining = totalSpeed > 0 
-        ? (totalSize - totalDownloaded) / totalSpeed 
-        : 0;
-
-      setDownloadState(prev => ({
-        ...prev,
-        progress: avgProgress,
-        speed: totalSpeed,
-        timeRemaining: timeRemaining
-      }));
-    }
-  }, [downloadState.downloads, downloadState.completed]);
+  const filteredFiles = files.filter(file => file.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const folders = filteredFiles.filter(file => !file.is_file);
+  const filesList = filteredFiles.filter(file => file.is_file);
 
   return (
-    <Box display="flex" sx={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
+    <Box display="flex" sx={{ backgroundColor: '#f5f5f5', minHeight: '100vh' }}>
       <Sidebar />
-      <Box component="main" sx={{ flexGrow: 1, p: 4 }}>
-        {/* Download Progress Indicator */}
-        {downloadState.active && (
-          <Paper elevation={3} sx={{ mb: 3, p: 2, position: 'relative' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-              <Badge 
-                badgeContent={`${downloadState.completed}/${downloadState.total}`} 
-                color="primary"
-                sx={{ mr: 2 }}
-              >
-                <DownloadIcon color="primary" />
-              </Badge>
-              <Box sx={{ flexGrow: 1 }}>
-                <Typography variant="subtitle1">
-                  Downloading {downloadState.total} file{downloadState.total !== 1 ? 's' : ''}
-                  {downloadState.completed > 0 && ` (${downloadState.completed} completed)`}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {downloadState.progress}% complete
-                </Typography>
-              </Box>
-              {downloadState.showCancel && (
-                <IconButton 
-                  size="small" 
-                  onClick={() => setConfirmCancelOpen(true)}
-                  disabled={!downloadState.active}
-                >
-                  <CloseIcon fontSize="small" />
-                </IconButton>
-              )}
-            </Box>
-            <LinearProgress 
-              variant="determinate" 
-              value={downloadState.progress} 
-              sx={{ height: 8, borderRadius: 4 }}
-            />
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-              <Typography variant="caption" color="text.secondary">
-                {formatBytes(downloadState.speed)}/s
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {downloadState.timeRemaining > 0 && `${formatTime(downloadState.timeRemaining)} remaining`}
-              </Typography>
-            </Box>
-          </Paper>
-        )}
-
-        {/* Individual download progress */}
-        {downloadState.active && Object.keys(downloadState.downloads).length > 0 && (
-          <Paper elevation={3} sx={{ mb: 3, p: 2 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>Download Details</Typography>
-            <List dense>
-              {Object.entries(downloadState.downloads).map(([path, download]) => {
-                const file = files.find(f => f.path === path);
-                return (
-                  <ListItem key={path}>
-                    <ListItemIcon>
-                      {file && getFileIcon(file.name)}
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={file?.name || path.split('/').pop()}
-                      secondary={
-                        <Box sx={{ width: '100%' }}>
-                          <LinearProgress
-                            variant="determinate"
-                            value={download.progress}
-                            sx={{ height: 4, my: 1 }}
-                            color={download.error ? 'error' : 'primary'}
-                          />
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="caption">
-                              {download.progress}%
-                            </Typography>
-                            <Typography variant="caption">
-                              {formatBytes(download.downloaded)} of {formatBytes(download.total)}
-                            </Typography>
-                          </Box>
-                        </Box>
-                      }
-                    />
-                  </ListItem>
-                );
-              })}
-            </List>
-          </Paper>
-        )}
-
-        {/* Main content */}
-        <Paper elevation={0} sx={{ p: 3, borderRadius: 3, backgroundColor: 'white' }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-            <Typography variant="h5" sx={{ fontWeight: 600, color: 'text.primary' }}>
-              File Manager
-            </Typography>
-            
-            <Box sx={{ display: 'flex', gap: 2 }}>
+      <Box flexGrow={1} p={4}>
+        <Paper sx={{ p: 3, mb: 3, borderRadius: 3 }}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography variant="h5" sx={{ fontWeight: 600 }}>My Drive</Typography>
+            <Box display="flex" gap={2}>
               <TextField
                 size="small"
                 placeholder="Search files..."
-                variant="outlined"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                InputProps={{
-                  startAdornment: <SearchIcon color="action" sx={{ mr: 1 }} />,
-                  sx: { borderRadius: 2 }
+                InputProps={{ 
+                  startAdornment: <SearchIcon color="action" />,
+                  sx: { backgroundColor: 'white' }
                 }}
                 sx={{ width: 300 }}
               />
-              
-              {selectedFiles.length > 0 && (
-                <Button 
-                  variant="contained" 
-                  startIcon={<DownloadIcon />}
-                  onClick={downloadSelectedFiles}
-                  sx={{ borderRadius: 2 }}
-                  disabled={downloadState.active}
-                >
-                  Download ({selectedFiles.length})
-                </Button>
-              )}
+              <Button 
+                variant={viewMode === 'grid' ? 'contained' : 'outlined'} 
+                onClick={() => setViewMode('grid')}
+                size="small"
+              >
+                Grid
+              </Button>
+              <Button 
+                variant={viewMode === 'list' ? 'contained' : 'outlined'} 
+                onClick={() => setViewMode('list')}
+                size="small"
+              >
+                List
+              </Button>
             </Box>
           </Box>
 
           {renderBreadcrumbs()}
+          
+          {selectedFiles.length > 0 && (
+            <Paper elevation={0} sx={{ 
+              p: 1, 
+              mb: 2,
+              backgroundColor: 'primary.light',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <Typography variant="subtitle2" color="primary.contrastText">
+                {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
+              </Typography>
+              <Box>
+                <Button
+                  variant="contained"
+                  startIcon={<DownloadIcon />}
+                  onClick={downloadSelectedItems}
+                  size="small"
+                  sx={{ mr: 1 }}
+                >
+                  Download
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<LinkIcon />}
+                  onClick={() => {
+                    if (selectedFiles.length === 1) {
+                      const item = files.find(f => f.path === selectedFiles[0]);
+                      generateShareLink(item.path, false);
+                    } else {
+                      setSnackbar({ 
+                        open: true, 
+                        message: 'Can only generate link for single file', 
+                        severity: 'warning' 
+                      });
+                    }
+                  }}
+                  size="small"
+                  disabled={selectedFiles.length !== 1}
+                >
+                  Share
+                </Button>
+              </Box>
+            </Paper>
+          )}
 
           <Divider sx={{ my: 2 }} />
 
-          {loading ? (
-            <Box display="flex" justifyContent="center" sx={{ py: 4 }}>
-              <CircularProgress />
-            </Box>
-          ) : (
-            <List sx={{ width: '100%' }}>
-              {currentPath && (
-                <ListItem 
-                  button 
-                  onClick={navigateUp}
-                  sx={{ 
-                    borderRadius: 1,
-                    '&:hover': { backgroundColor: 'action.hover' }
-                  }}
-                >
-                  <ListItemIcon>
-                    <ArrowUpwardIcon color="primary" />
-                  </ListItemIcon>
-                  <ListItemText primary="Go up one level" />
-                </ListItem>
-              )}
-              
-              {filteredFiles.map(file => (
-                <ListItem
-                  key={file.path}
-                  sx={{
-                    borderRadius: 1,
-                    '&:hover': { backgroundColor: 'action.hover' },
-                    mb: 0.5,
-                    backgroundColor: !file.is_file ? 'rgba(25, 118, 210, 0.04)' : 'inherit'
-                  }}
-                  onContextMenu={(e) => file.is_file && handleContextMenu(e, file)}
-                >
-                  <Checkbox 
-                    checked={selectedFiles.includes(file.path)}
-                    onChange={() => handleFileSelect(file.path, file.is_file)}
-                    sx={{ mr: 1 }}
-                    disabled={downloadState.active || !file.is_file}
-                  />
-                  
-                  <ListItemIcon>
-                    {file.is_file ? (
-                      <Avatar sx={{ 
-                        bgcolor: 'transparent', 
-                        width: 36, 
-                        height: 36,
-                        color: 'text.secondary'
-                      }}>
-                        {getFileIcon(file.name)}
-                      </Avatar>
-                    ) : (
-                      <Avatar sx={{ 
-                        bgcolor: 'secondary.light', 
-                        width: 36, 
-                        height: 36 
-                      }}>
-                        <FolderIcon fontSize="medium" sx={{ color: 'secondary.main' }} />
-                      </Avatar>
-                    )}
-                  </ListItemIcon>
-                  
-                  <ListItemText
-                    primary={
-                      <Typography 
-                        onClick={() => file.is_file ? null : handleFolderClick(file.path)}
-                        sx={{ 
-                          cursor: file.is_file ? 'default' : 'pointer',
-                          fontWeight: file.is_file ? 500 : 600,
-                          color: !file.is_file ? 'primary.main' : 'inherit'
-                        }}
-                      >
-                        {file.name}
-                      </Typography>
-                    }
-                    secondary={
-                      <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
-                        <Typography variant="caption" color="text.secondary">
-                          {file.is_file ? formatBytes(file.size) : 'Folder'}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Modified: {formatDate(file.modified)}
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                  
-                  <ListItemSecondaryAction>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Tooltip title={file.is_file ? "Download" : "Download as ZIP"}>
-                        <IconButton 
-                          onClick={() => file.is_file ? downloadSingleFile(file) : null}
-                          size="small"
-                          sx={{ 
-                            backgroundColor: 'action.selected',
-                            '&:hover': { backgroundColor: 'action.hover' }
-                          }}
-                          disabled={downloadState.active || !file.is_file}
-                        >
-                          <DownloadIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      
-                      {file.is_file && (
-                        <Tooltip title="More actions">
-                          <IconButton 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleContextMenu(e, file);
-                            }}
-                            size="small"
+          {viewMode === 'grid' ? (
+            <>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>Folders</Typography>
+              <Grid container spacing={3} sx={{ mb: 4 }}>
+                {folders.map(folder => (
+                  <Grid item key={folder.path} xs={12} sm={6} md={4} lg={3}>
+                    <Card 
+                      variant="outlined"
+                      sx={{
+                        '&:hover': {
+                          boxShadow: 2,
+                          borderColor: 'primary.main'
+                        }
+                      }}
+                    >
+                      <CardActionArea onClick={() => handleFolderClick(folder.path)}>
+                        <CardContent sx={{ textAlign: 'center' }}>
+                          <FolderIcon color="primary" sx={{ fontSize: 60 }} />
+                          <Typography 
+                            variant="subtitle1" 
                             sx={{ 
-                              backgroundColor: 'action.selected',
-                              '&:hover': { backgroundColor: 'action.hover' }
+                              mt: 1,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
                             }}
-                            disabled={downloadState.active}
                           >
-                            <MoreVertIcon fontSize="small" />
+                            {folder.name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {formatDate(folder.modified)}
+                          </Typography>
+                        </CardContent>
+                      </CardActionArea>
+                      <CardActions sx={{ justifyContent: 'center' }}>
+                        <Tooltip title="Download">
+                          <IconButton onClick={(e) => {
+                            e.stopPropagation();
+                            downloadItem(folder);
+                          }}>
+                            <DownloadIcon color="action" />
                           </IconButton>
                         </Tooltip>
-                      )}
-                    </Box>
+                        <Tooltip title="Share">
+                          <IconButton onClick={(e) => {
+                            e.stopPropagation();
+                            generateShareLink(folder.path, true);
+                          }}>
+                            <LinkIcon color="action" />
+                          </IconButton>
+                        </Tooltip>
+                      </CardActions>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>Files</Typography>
+              <Grid container spacing={3}>
+                {filesList.map(file => (
+                  <Grid item key={file.path} xs={12} sm={6} md={4} lg={3}>
+                    <Card 
+                      variant="outlined"
+                      sx={{
+                        borderColor: selectedFiles.includes(file.path) ? 'primary.main' : 'divider',
+                        backgroundColor: selectedFiles.includes(file.path) ? 'primary.lightest' : 'background.paper',
+                        '&:hover': {
+                          boxShadow: 2,
+                          borderColor: 'primary.main'
+                        }
+                      }}
+                    >
+                      <CardActionArea onClick={() => handleFileSelect(file.path)}>
+                        <CardContent sx={{ textAlign: 'center', position: 'relative' }}>
+                          <Checkbox
+                            checked={selectedFiles.includes(file.path)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleFileSelect(file.path);
+                            }}
+                            sx={{ 
+                              position: 'absolute', 
+                              top: 0, 
+                              left: 0,
+                              zIndex: 1 
+                            }}
+                          />
+                          {getFileIcon(file.name, false)}
+                          <Typography 
+                            variant="subtitle1" 
+                            sx={{ 
+                              mt: 1,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
+                            }}
+                          >
+                            {file.name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {formatBytes(file.size)} • {formatDate(file.modified)}
+                          </Typography>
+                        </CardContent>
+                      </CardActionArea>
+                      <CardActions sx={{ justifyContent: 'center' }}>
+                        <Tooltip title="Download">
+                          <IconButton onClick={() => downloadItem(file)}>
+                            <DownloadIcon color="action" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Share">
+                          <IconButton onClick={() => generateShareLink(file.path, false)}>
+                            <LinkIcon color="action" />
+                          </IconButton>
+                        </Tooltip>
+                      </CardActions>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+            </>
+          ) : (
+            <List>
+              {folders.map(folder => (
+                <ListItem 
+                  key={folder.path}
+                  button
+                  onClick={() => handleFolderClick(folder.path)}
+                  sx={{ 
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                    mb: 1,
+                    '&:hover': {
+                      borderColor: 'primary.main'
+                    }
+                  }}
+                >
+                  <ListItemIcon>
+                    <FolderIcon color="primary" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={folder.name}
+                    secondary={`Modified: ${formatDate(folder.modified)}`}
+                  />
+                  <ListItemSecondaryAction>
+                    <Tooltip title="Download">
+                      <IconButton onClick={() => downloadItem(folder)}>
+                        <DownloadIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Share">
+                      <IconButton onClick={() => generateShareLink(folder.path, true)}>
+                        <LinkIcon />
+                      </IconButton>
+                    </Tooltip>
                   </ListItemSecondaryAction>
                 </ListItem>
               ))}
-              
-              {filteredFiles.length === 0 && (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography color="text.secondary">
-                    {searchTerm ? 'No files match your search' : 'This folder is empty'}
-                  </Typography>
-                </Box>
-              )}
+              {filesList.map(file => (
+                <ListItem 
+                  key={file.path}
+                  sx={{ 
+                    backgroundColor: selectedFiles.includes(file.path) ? 'primary.lightest' : 'transparent',
+                    border: '1px solid',
+                    borderColor: selectedFiles.includes(file.path) ? 'primary.main' : 'divider',
+                    borderRadius: 1,
+                    mb: 1,
+                    '&:hover': {
+                      borderColor: 'primary.main'
+                    }
+                  }}
+                >
+                  <Checkbox
+                    checked={selectedFiles.includes(file.path)}
+                    onChange={() => handleFileSelect(file.path)}
+                  />
+                  <ListItemIcon>
+                    {getFileIcon(file.name)}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={file.name}
+                    secondary={`${formatBytes(file.size)} • Modified: ${formatDate(file.modified)}`}
+                  />
+                  <ListItemSecondaryAction>
+                    <Tooltip title="Download">
+                      <IconButton onClick={() => downloadItem(file)}>
+                        <DownloadIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Share">
+                      <IconButton onClick={() => generateShareLink(file.path, false)}>
+                        <LinkIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </ListItemSecondaryAction>
+                </ListItem>
+              ))}
             </List>
           )}
         </Paper>
 
-        {/* API Share Link Panel */}
         {shareLink.open && (
-          <Paper elevation={0} sx={{  mt: 3,
-                                      p: 3,
-                                      borderRadius: 3,
-                                      backgroundColor: 'white',
-                                      maxWidth: 1200, // adjust as needed
-                                      width: '100%',
-                                      mx: 'auto' }}>
+          <Paper elevation={3} sx={{ 
+            mt: 3,
+            p: 3,
+            borderRadius: 3,
+            backgroundColor: 'white',
+            maxWidth: 1200,
+            width: '100%',
+            mx: 'auto'
+          }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 2 }}>
-              API Share Link
+              Shareable Link
             </Typography>
             
             <Box sx={{ 
@@ -846,9 +588,6 @@ export default function Files() {
                 Copy
               </Button>
             </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-              This link requires an API key for access
-            </Typography>
             
             <Box component="pre" sx={{ 
               backgroundColor: '#1e1e1e',
@@ -877,29 +616,31 @@ export default function Files() {
           </Paper>
         )}
 
-        {/* Context Menu */}
         <Menu
           open={contextMenu.open}
           anchorEl={contextMenu.anchorEl}
-          onClose={handleCloseContextMenu}
-          onClick={handleCloseContextMenu}
+          onClose={() => setContextMenu({ open: false, file: null, anchorEl: null })}
         >
-          <MenuItem 
-            onClick={() => {
-              if (contextMenu.file) {
-                generateShareLink(contextMenu.file.path);
-              }
-            }}
-            disabled={downloadState.active}
-          >
-            <ListItemIcon>
-              <LinkIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Get API Share Link</ListItemText>
+          <MenuItem onClick={() => {
+            if (contextMenu.file) {
+              generateShareLink(contextMenu.file.path, !contextMenu.file.is_file);
+            }
+            setContextMenu({ open: false, file: null, anchorEl: null });
+          }}>
+            <ListItemIcon><LinkIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Get Share Link</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={() => {
+            if (contextMenu.file) {
+              downloadItem(contextMenu.file);
+            }
+            setContextMenu({ open: false, file: null, anchorEl: null });
+          }}>
+            <ListItemIcon><DownloadIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Download</ListItemText>
           </MenuItem>
         </Menu>
 
-        {/* Snackbar for notifications */}
         <Snackbar
           open={snackbar.open}
           autoHideDuration={6000}
@@ -910,30 +651,10 @@ export default function Files() {
             onClose={() => setSnackbar({ ...snackbar, open: false })} 
             severity={snackbar.severity}
             sx={{ width: '100%' }}
-            elevation={6}
           >
             {snackbar.message}
           </Alert>
         </Snackbar>
-
-        {/* Cancel Download Confirmation Dialog */}
-        <Dialog
-          open={confirmCancelOpen}
-          onClose={() => setConfirmCancelOpen(false)}
-          maxWidth="xs"
-          fullWidth
-        >
-          <DialogTitle>Cancel Downloads?</DialogTitle>
-          <DialogContent>
-            <Typography>
-              Are you sure you want to cancel all active downloads? Any downloaded data will be lost.
-            </Typography>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setConfirmCancelOpen(false)}>No, Continue</Button>
-            <Button onClick={cancelAllDownloads} color="error">Yes, Cancel All</Button>
-          </DialogActions>
-        </Dialog>
       </Box>
     </Box>
   );
